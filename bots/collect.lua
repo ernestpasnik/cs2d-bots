@@ -1,82 +1,88 @@
+--------------------------------------------------
+-- Item Collection
+--------------------------------------------------
+
+-- Minimum scan period (ticks)
+local SCAN_PERIOD = 100
+local SCAN_JITTER = 50
+local SCAN_RADIUS = 5
+
 function fai_collect(id)
 
-    -- Update scan timer
+    --------------------------------------------------------------------------
+    -- THROTTLE: only scan every ~100 ticks
+    --------------------------------------------------------------------------
     vai_itemscan[id] = vai_itemscan[id] + 1
-    if vai_itemscan[id] <= 100 then
-        return
-    end
-
-    -- Reset timer
-    vai_itemscan[id] = math.random(0, 50)
+    if vai_itemscan[id] <= SCAN_PERIOD then return end
+    vai_itemscan[id] = math.random(0, SCAN_JITTER)
 
     local team = player(id, "team")
 
-    -- Already collecting OR zombie mode
+    -- Skip if already collecting or if zombie-team
     if vai_mode[id] == 6 then return end
     if team == 1 and vai_set_gm == 4 then return end
 
-    -- Scan items within 5 tiles
-    local items = closeitems(id, 5)
-    local px, py = player(id, "tilex"), player(id, "tiley")
-    local money  = player(id, "money")
-    local hp     = player(id, "health")
-    local maxhp  = player(id, "maxhealth")
+    --------------------------------------------------------------------------
+    -- CACHE PLAYER STATE
+    --------------------------------------------------------------------------
+    local px      = player(id, "tilex")
+    local py      = player(id, "tiley")
+    local money   = player(id, "money")
+    local hp      = player(id, "health")
+    local maxhp   = player(id, "maxhealth")
     local weapons = playerweapons(id)
 
-    for _, it in ipairs(items) do
-        local ix, iy = item(it, "x"), item(it, "y")
+    --------------------------------------------------------------------------
+    -- SCAN NEARBY ITEMS
+    --------------------------------------------------------------------------
+    local items = closeitems(id, SCAN_RADIUS)
 
-        -- Ignore items on the same tile
+    for i = 1, #items do
+        local it    = items[i]
+        local ix    = item(it, "x")
+        local iy    = item(it, "y")
+
+        -- Skip items on the exact same tile (already standing on it)
         if ix ~= px or iy ~= py then
-            local itype = item(it, "type")
-            local slot  = itemtype(itype, "slot")
+            local itype   = item(it, "type")
+            local slot    = itemtype(itype, "slot")
             local collect = false
 
-            -- Slot-based logic
             if slot == 1 then
-                -- Primary weapon
-                if not fai_playerslotitems(id, 1) and team ~= 3 then
-                    collect = true
-                end
+                -- Primary weapon: take only if we have no primary
+                collect = not fai_playerslotitems(id, 1) and team ~= 3
 
             elseif slot == 2 then
-                -- Secondary weapon
-                if not fai_playerslotitems(id, 2) and team ~= 3 then
-                    collect = true
-                end
+                -- Secondary weapon: take only if we have no secondary
+                collect = not fai_playerslotitems(id, 2) and team ~= 3
 
             elseif slot == 3 or slot == 4 then
-                -- Melee or Grenade
-                if not fai_contains(weapons, itype) and team ~= 3 then
-                    collect = true
-                end
+                -- Melee / Grenade: take if we don't have this specific weapon
+                collect = not fai_contains(weapons, itype) and team ~= 3
 
             elseif slot == 5 then
-                -- Special items
-                if itype == 55 and team == 1 then
-                    collect = true
-                end
+                -- Special: only T picks up bomb (type 55)
+                collect = itype == 55 and team == 1
 
             elseif slot == 0 then
-                -- No-slot items
                 if itype == 70 or itype == 71 then
-                    collect = true -- Flags
-
-                elseif itype >= 66 and itype <= 68 and money < 16000 then
-                    collect = true -- Money
-
-                elseif itype >= 64 and itype <= 65 and hp < maxhp then
-                    collect = true -- Health
+                    -- CTF flags
+                    collect = true
+                elseif itype >= 66 and itype <= 68 then
+                    -- Money (only below cap)
+                    collect = money < 16000
+                elseif itype >= 64 and itype <= 65 then
+                    -- Health items (only when not full)
+                    collect = hp < maxhp
                 end
             end
 
-            -- Start collecting
             if collect then
                 vai_mode[id]  = 6
                 vai_smode[id] = itype
                 vai_destx[id] = ix
                 vai_desty[id] = iy
-                break
+                return  -- one item at a time
             end
         end
     end

@@ -1,8 +1,16 @@
-function fai_follow(id)
-    local p = player
-    local r = math.random
-    local abs = math.abs
+--------------------------------------------------
+-- Follow Logic
+--------------------------------------------------
 
+local abs    = math.abs
+local random = math.random
+local p      = player
+
+-- Distance (in tiles) before stopping the follow and roaming near target
+local CLOSE_DIST_X = 3
+local CLOSE_DIST_Y = 2
+
+function fai_follow(id)
     local fid = vai_smode[id]  -- followed player ID
 
     --------------------------------------------------------------------------
@@ -13,45 +21,34 @@ function fai_follow(id)
         return
     end
 
-    --------------------------------------------------------------------------
-    -- CACHE POSITIONS
-    --------------------------------------------------------------------------
-    local my_tx = p(id, "tilex")
-    local my_ty = p(id, "tiley")
+    local my_tx = p(id,  "tilex")
+    local my_ty = p(id,  "tiley")
     local fx    = p(fid, "tilex")
     local fy    = p(fid, "tiley")
 
     --------------------------------------------------------------------------
-    -- ROAMING AROUND TARGET (timer > 0)
+    -- ROAMING NEARBY (timer > 0)
     --------------------------------------------------------------------------
     local timer = vai_timer[id]
     if timer > 0 then
-        -- Try to move in current roam direction
         if ai_move(id, vai_destx[id], 1) == 0 then
-            -- Blocked → turn
-            if (id % 2) == 0 then
-                vai_destx[id] = vai_destx[id] + 45
-            else
-                vai_destx[id] = vai_destx[id] - 45
-            end
-            vai_timer[id] = r(3, 5) * 50
+            -- Blocked → change direction
+            vai_destx[id] = vai_destx[id] + ((id % 2 == 0) and 45 or -45)
+            vai_timer[id] = random(3, 5) * 50
         else
-            -- Continue roaming
             timer = timer - 1
             vai_timer[id] = timer
 
-            -- Change roam direction
-            if timer == 1 then
-                vai_timer[id] = r(3, 5) * 50
-                vai_destx[id] = r(0, 360)
+            -- Pick a new random direction at the end of a roam phase
+            if timer == 0 then
+                vai_timer[id] = random(3, 5) * 50
+                vai_destx[id] = random(0, 360)
             end
 
-            -- Every 25 ticks: check distance to followed player
-            if (timer % 25) == 0 then
-                if abs(my_tx - fx) > 3 or abs(my_ty - fy) > 2 then
-                    -- Too far → resume following
-                    vai_timer[id] = 0
-                end
+            -- Periodic distance check: resume following if leader moved away
+            if (timer % 25) == 0
+            and (abs(my_tx - fx) > CLOSE_DIST_X or abs(my_ty - fy) > CLOSE_DIST_Y) then
+                vai_timer[id] = 0  -- break roam, fall through to follow
             end
         end
 
@@ -60,12 +57,12 @@ function fai_follow(id)
     end
 
     --------------------------------------------------------------------------
-    -- FOLLOW TARGET (timer == 0)
+    -- FOLLOWING (timer == 0)
     --------------------------------------------------------------------------
     if ai_goto(id, fx, fy) == 1 then
-        -- Reached → start roaming
-        vai_timer[id] = r(3, 5) * 50
-        vai_destx[id] = r(0, 360)
+        -- Reached → switch to roam phase
+        vai_timer[id] = random(3, 5) * 50
+        vai_destx[id] = random(0, 360)
     end
 
     fai_walkaim(id)

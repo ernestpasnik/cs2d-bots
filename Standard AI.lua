@@ -1,8 +1,7 @@
 --------------------------------------------------
--- CS2D Standard Bot AI (Optimized)             --
+-- Modernized bot AI for CS2D
 --------------------------------------------------
 
--- Includes
 dofile("bots/includes/settings.lua")
 dofile("bots/includes/general.lua")
 dofile("bots/includes/buy.lua")
@@ -19,77 +18,144 @@ dofile("bots/includes/hostages.lua")
 -- Cached Settings
 --------------------------------------------------
 
-vai_set_gm        = 0
-vai_set_botskill  = 0
-vai_set_botweapons= 0
-vai_set_debug     = 0
+vai_set_gm         = 0
+vai_set_botskill   = 0
+vai_set_botweapons = 0
+vai_set_debug      = 0
 fai_update_settings()
 
 --------------------------------------------------
--- Per‑Player Variables
+-- Per-Player State Tables
 --------------------------------------------------
 
-vai_mode, vai_smode      = {}, {}
-vai_timer                 = {}
-vai_destx, vai_desty      = {}, {}
-vai_aimx, vai_aimy        = {}, {}
-vai_px, vai_py            = {}, {}
-vai_target                = {}
-vai_reaim, vai_rescan     = {}, {}
-vai_itemscan              = {}
-vai_buyingdone            = {}
-vai_radioanswer           = {}
-vai_radioanswert          = {}
+local N = 32
 
-for i = 1, 32 do
-    vai_mode[i]        = -1
-    vai_smode[i]       = 0
-    vai_timer[i]       = 0
-    vai_destx[i]       = 0
-    vai_desty[i]       = 0
-    vai_aimx[i]        = 0
-    vai_aimy[i]        = 0
-    vai_px[i]          = 0
-    vai_py[i]          = 0
-    vai_target[i]      = 0
-    vai_reaim[i]       = 0
-    vai_rescan[i]      = 0
-    vai_itemscan[i]    = 0
-    vai_buyingdone[i]  = 0
-    vai_radioanswer[i] = 0
-    vai_radioanswert[i]= 0
+local function newtable(default)
+    local t = {}
+    for i = 1, N do t[i] = default end
+    return t
 end
+
+vai_mode        = newtable(-1)
+vai_smode       = newtable(0)
+vai_timer       = newtable(0)
+vai_destx       = newtable(0)
+vai_desty       = newtable(0)
+vai_aimx        = newtable(0)
+vai_aimy        = newtable(0)
+vai_px          = newtable(0)
+vai_py          = newtable(0)
+vai_target      = newtable(0)
+vai_reaim       = newtable(0)
+vai_rescan      = newtable(0)
+vai_itemscan    = newtable(0)
+vai_buyingdone  = newtable(0)
+vai_radioanswer = newtable(0)
+vai_radioanswert= newtable(0)
+
+--------------------------------------------------
+-- Mode Handlers (dispatch table)
+--------------------------------------------------
+
+local MODE = {}
+
+MODE[0] = function(id)
+    vai_timer[id] = 0
+    vai_smode[id] = 0
+    fai_decide(id)
+end
+
+MODE[1] = function(id)
+    fai_wait(id, 0)
+end
+
+MODE[2] = function(id)
+    if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
+        vai_mode[id] = 0
+    else
+        fai_walkaim(id)
+    end
+end
+
+MODE[3] = function(id)
+    if ai_move(id, vai_smode[id]) == 0 then
+        vai_smode[id] = vai_smode[id] + ((id % 2 == 0) and 45 or -45)
+        vai_timer[id] = math.random(150, 250)
+    end
+    fai_walkaim(id)
+    fai_wait(id, 0)
+end
+
+MODE[4] = function(id)
+    fai_fight(id)
+end
+
+MODE[5] = function(id)
+    local tid = vai_smode[id]
+    if player(tid, "exists") and player(tid, "health") > 0 then
+        if ai_goto(id, player(tid, "tilex"), player(tid, "tiley")) ~= 2 then
+            vai_mode[id] = 0
+        end
+    else
+        vai_mode[id] = 0
+    end
+end
+
+MODE[6] = function(id)
+    if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
+        vai_mode[id]     = 0
+        vai_itemscan[id] = 140
+    else
+        fai_walkaim(id)
+    end
+end
+
+MODE[7] = function(id)
+    fai_follow(id)
+end
+
+MODE[8] = function(id)
+    if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
+        fai_randomadjacent(id)
+    end
+    if player(id, "ai_flash") == 0 then
+        vai_mode[id] = 0
+    end
+end
+
+MODE[50] = function(id) fai_rescuehostages(id) end
+MODE[51] = function(id) fai_plantbomb(id) end
+MODE[52] = function(id) fai_defuse(id) end
+
+MODE[-1] = function(id) fai_buy(id) end
 
 --------------------------------------------------
 -- ai_onspawn
 --------------------------------------------------
 
 function ai_onspawn(id)
-    local p = player
-    local r = math.random
-
     fai_update_settings()
 
-    vai_mode[id]        = -1
-    vai_smode[id]       = 0
-    vai_timer[id]       = r(1, 10)
-    vai_destx[id]       = 0
-    vai_desty[id]       = 0
+    local x = player(id, "x")
+    local y = player(id, "y")
+    local r = math.random
 
-    local x = p(id, "x")
-    local y = p(id, "y")
-
-    vai_aimx[id]        = x - 50 + r(0, 100)
-    vai_aimy[id]        = y - 50 + r(0, 100)
-    vai_px[id]          = x
-    vai_py[id]          = y
-    vai_target[id]      = 0
-    vai_reaim[id]       = 0
-    vai_rescan[id]      = 0
-    vai_itemscan[id]    = 1000
-    vai_buyingdone[id]  = 0
-    vai_radioanswer[id] = 0
-    vai_radioanswert[id]= 0
+    vai_mode[id]         = -1
+    vai_smode[id]        = 0
+    vai_timer[id]        = r(1, 10)
+    vai_destx[id]        = 0
+    vai_desty[id]        = 0
+    vai_aimx[id]         = x - 50 + r(0, 100)
+    vai_aimy[id]         = y - 50 + r(0, 100)
+    vai_px[id]           = x
+    vai_py[id]           = y
+    vai_target[id]       = 0
+    vai_reaim[id]        = 0
+    vai_rescan[id]       = 0
+    vai_itemscan[id]     = 1000
+    vai_buyingdone[id]   = 0
+    vai_radioanswer[id]  = 0
+    vai_radioanswert[id] = 0
 end
 
 --------------------------------------------------
@@ -97,120 +163,43 @@ end
 --------------------------------------------------
 
 function ai_update_living(id)
-    local p = player
-    local r = math.random
-
-    -- Engage / Aim
+    -- Engage handles aiming and target tracking
     fai_engage(id)
 
-    -- Bot may have been killed or kicked
-    if not p(id, "exists") then return end
-    if p(id, "team") <= 0 or p(id, "health") <= 0 then return end
+    -- Guard: bot may have died or been kicked during engage
+    if not player(id, "exists")
+    or player(id, "team") <= 0
+    or player(id, "health") <= 0 then
+        return
+    end
 
-    -- Radio answer timer
+    -- Radio answer countdown
     local rt = vai_radioanswert[id]
     if rt > 0 then
         rt = rt - 1
         vai_radioanswert[id] = rt
-        if rt <= 0 then
+        if rt == 0 then
             ai_radio(id, vai_radioanswer[id])
-            vai_radioanswer[id]  = 0
-            vai_radioanswert[id] = 0
+            vai_radioanswer[id] = 0
         end
     end
 
-    -- Collect items
+    -- Item collection scan
     fai_collect(id)
 
-    -- Debug output
+    -- Debug overlay
     if vai_set_debug == 1 then
-        ai_debug(id, "m:" .. vai_mode[id] ..
-                     ", sm:" .. vai_smode[id] ..
-                     " ta:" .. vai_target[id] ..
-                     " ti:" .. vai_timer[id])
+        ai_debug(id, ("m:%d sm:%d ta:%d ti:%d"):format(
+            vai_mode[id], vai_smode[id], vai_target[id], vai_timer[id]))
     end
 
-    --------------------------------------------------
-    -- State Machine
-    --------------------------------------------------
-
-    local mode = vai_mode[id]
-
-    if mode == 0 then
-        vai_timer[id] = 0
-        vai_smode[id] = 0
-        fai_decide(id)
-
-    elseif mode == 1 then
-        fai_wait(id, 0)
-
-    elseif mode == 2 then
-        local result = ai_goto(id, vai_destx[id], vai_desty[id])
-        if result ~= 2 then
-            vai_mode[id] = 0
-        else
-            fai_walkaim(id)
-        end
-
-    elseif mode == 3 then
-        if ai_move(id, vai_smode[id]) == 0 then
-            if (id % 2) == 0 then
-                vai_smode[id] = vai_smode[id] + 45
-            else
-                vai_smode[id] = vai_smode[id] - 45
-            end
-            vai_timer[id] = r(150, 250)
-        end
-        fai_walkaim(id)
-        fai_wait(id, 0)
-
-    elseif mode == 4 then
-        fai_fight(id)
-
-    elseif mode == 5 then
-        local tid = vai_smode[id]
-        if p(tid, "exists") and p(tid, "health") > 0 then
-            if ai_goto(id, p(tid, "tilex"), p(tid, "tiley")) ~= 2 then
-                vai_mode[id] = 0
-            end
-            return
-        end
-        vai_mode[id] = 0
-
-    elseif mode == 6 then
-        if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
-            vai_mode[id] = 0
-            vai_itemscan[id] = 140
-        else
-            fai_walkaim(id)
-        end
-
-    elseif mode == 7 then
-        fai_follow(id)
-
-    elseif mode == 8 then
-        if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
-            fai_randomadjacent(id)
-        end
-        if p(id, "ai_flash") == 0 then
-            vai_mode[id] = 0
-        end
-
-    elseif mode == 50 then
-        fai_rescuehostages(id)
-
-    elseif mode == 51 then
-        fai_plantbomb(id)
-
-    elseif mode == 52 then
-        fai_defuse(id)
-
-    elseif mode == -1 then
-        fai_buy(id)
-
+    -- Dispatch to mode handler
+    local handler = MODE[vai_mode[id]]
+    if handler then
+        handler(id)
     else
         if vai_set_debug == 1 then
-            print("invalid AI mode: " .. mode)
+            print("invalid AI mode: " .. tostring(vai_mode[id]))
         end
         vai_mode[id] = 0
     end
@@ -236,9 +225,7 @@ function ai_hear_radio(source, radio)
 end
 
 --------------------------------------------------
--- ai_hear_chat
+-- ai_hear_chat  (intentionally unused)
 --------------------------------------------------
 
-function ai_hear_chat(source, msg, teamonly)
-    -- ignored
-end
+function ai_hear_chat(source, msg, teamonly) end
