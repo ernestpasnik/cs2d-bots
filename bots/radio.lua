@@ -1,92 +1,124 @@
---[[
+function fai_radio(source, radio)
+    local p   = player
+    local r   = math.random
+    local bots, mates, mate
 
-Radio messages allow players to control bots.
-Bots may (randomly) do what they receive via radio.
+    --------------------------------------------------------------------------
+    -- RADIO 4: Bomb planted → all CT bots go defuse
+    --------------------------------------------------------------------------
+    if radio == 4 then
+        bots = p(0, "table")
+        for _, id in pairs(bots) do
+            if p(id, "bot") == 1 and p(id, "team") == 2 then
+                if vai_mode[id] ~= 52 then
+                    vai_destx[id], vai_desty[id] = randomentity(5, 0)
+                    vai_mode[id]  = 52
+                    vai_smode[id] = 0
+                    vai_timer[id] = 0
+                end
+            end
+        end
+        return
+    end
 
-]]--
+    --------------------------------------------------------------------------
+    -- RADIO 1 / 6 / 13: Follow me / Need backup / Cover me
+    --------------------------------------------------------------------------
+    if radio == 1 or radio == 6 or radio == 13 then
+        mate = fai_randommate(source)
+        if mate ~= 0 then
+            vai_radioanswer[mate]  = (r(1, 2) == 1) and 0 or 28
+            vai_radioanswert[mate] = r(35, 100)
+            vai_mode[mate]         = 7
+            vai_smode[mate]        = source
+            vai_timer[mate]        = 0
+        end
+        return
+    end
 
--- Radio message handling
-function fai_radio(source,radio)
-	-- ############################################################ Bomb planted!
-	-- Action: every CT will try to defuse!
-	if radio==4 then
-		local bots=player(0,"table")
-		for _,id in pairs(bots) do
-			if player(id,"bot")==1 and player(id,"team")==2 then
-				if vai_mode[id]~=52 then
-					vai_destx[id],vai_desty[id]=randomentity(5,0)
-					vai_mode[id]=52; vai_smode[id]=0; vai_timer[id]=0
-				end
-			end
-		end
-	-- ############################################################ Need Backup / Cover me / Follow Me
-	-- Action: let bot follow player
-	elseif radio==1 or radio==6 or radio==13 then
-		local mate=fai_randommate(source)
-		if mate~=0 then
-			if math.random(1,2)==1 then vai_radioanswer[mate]=0 else vai_radioanswer[mate]=28 end
-			vai_radioanswert[mate]=math.random(35,100)
-			vai_mode[mate]=7
-			vai_smode[mate]=source
-			vai_timer[mate]=0
-		end
-	-- ############################################################ Enemy spotted / Taking fire, need assistance
-	-- Action: let bot go to player
-	elseif radio==9 or radio==11 then
-		local mate=fai_randommate(source)
-		if mate~=0 then
-			if math.random(1,2)==1 then vai_radioanswer[mate]=0 else vai_radioanswer[mate]=28 end
-			vai_radioanswert[mate]=math.random(35,100)
-			vai_mode[mate]=2
-			vai_destx[mate]=player(source,"tilex")
-			vai_desty[mate]=player(source,"tiley")
-		end
-	-- ############################################################ Regroup Team
-	-- Action: let bots stop following, return to normal mode
-	elseif radio==24 then
-		local team=player(source,"team")
-		if team>2 then team=2 end
-		local mates=player(0,"team"..team.."living")
-		local c=1
-		for mate=1,#mates do
-			if vai_mode[mate]==7 then
-				if math.random(1,2)==1 then vai_radioanswer[mate]=0 else vai_radioanswer[mate]=28 end
-				vai_radioanswert[mate]=math.random(50,55)*c
-				c=c+1
-				vai_mode[mate]=0
-			end
-		end
-	-- ############################################################ Hold Position
-	-- Action: let bot camp
-	elseif radio==23 then
-		local mate=fai_randommate(source)
-		if mate~=0 then
-			if math.random(1,2)==1 then vai_radioanswer[mate]=0 else vai_radioanswer[mate]=28 end
-			vai_radioanswert[mate]=math.random(35,100)
-			vai_mode[mate]=1; vai_timer[mate]=math.random(30*50,60*50)
-		end
-	-- ############################################################ Team Fall Back / Go Go Go / Stick Together / Storm the Front / You take the point
-	-- Action: let camping (mode 1) or following (mode 7) bots return to normal mode
-	elseif radio==10 or radio==15 or radio==30 or radio==31 or radio==32 then
-		local team=player(source,"team")
-		if team>2 then team=2 end
-		local mates=player(0,"team"..team.."living")
-		local c=1
-		for mate=1,#mates do
-			if vai_mode[mate]==1 or vai_mode[mate]==7 then
-				if math.random(1,2)==1 then vai_radioanswer[mate]=0 else vai_radioanswer[mate]=28 end
-				vai_radioanswert[mate]=math.random(50,55)*c
-				c=c+1
-				vai_mode[mate]=0
-			end
-		end
-	-- ############################################################ Report in
-	-- Action: radio "reporting in!"
-	elseif radio==25 then
-		local mate=fai_randommate(source)
-		if mate~=0 then
-			vai_radioanswer[mate]=26
-			vai_radioanswert[mate]=math.random(35,100)
-		end
-	end
+    --------------------------------------------------------------------------
+    -- RADIO 9 / 11: Enemy spotted / Taking fire → go to player
+    --------------------------------------------------------------------------
+    if radio == 9 or radio == 11 then
+        mate = fai_randommate(source)
+        if mate ~= 0 then
+            vai_radioanswer[mate]  = (r(1, 2) == 1) and 0 or 28
+            vai_radioanswert[mate] = r(35, 100)
+            vai_mode[mate]         = 2
+            vai_destx[mate]        = p(source, "tilex")
+            vai_desty[mate]        = p(source, "tiley")
+        end
+        return
+    end
+
+    --------------------------------------------------------------------------
+    -- RADIO 24: Regroup team → stop following
+    --------------------------------------------------------------------------
+    if radio == 24 then
+        local team = p(source, "team")
+        if team > 2 then team = 2 end
+
+        mates = p(0, "team" .. team .. "living")
+        local c = 1
+
+        for i = 1, #mates do
+            mate = mates[i]
+            if vai_mode[mate] == 7 then
+                vai_radioanswer[mate]  = (r(1, 2) == 1) and 0 or 28
+                vai_radioanswert[mate] = r(50, 55) * c
+                c = c + 1
+                vai_mode[mate] = 0
+            end
+        end
+        return
+    end
+
+    --------------------------------------------------------------------------
+    -- RADIO 23: Hold position → camp
+    --------------------------------------------------------------------------
+    if radio == 23 then
+        mate = fai_randommate(source)
+        if mate ~= 0 then
+            vai_radioanswer[mate]  = (r(1, 2) == 1) and 0 or 28
+            vai_radioanswert[mate] = r(35, 100)
+            vai_mode[mate]         = 1
+            vai_timer[mate]        = r(30 * 50, 60 * 50)
+        end
+        return
+    end
+
+    --------------------------------------------------------------------------
+    -- RADIO 10 / 15 / 30 / 31 / 32: Fall back / Go go go / Stick together
+    --------------------------------------------------------------------------
+    if radio == 10 or radio == 15 or radio == 30 or radio == 31 or radio == 32 then
+        local team = p(source, "team")
+        if team > 2 then team = 2 end
+
+        mates = p(0, "team" .. team .. "living")
+        local c = 1
+
+        for i = 1, #mates do
+            mate = mates[i]
+            local mode = vai_mode[mate]
+            if mode == 1 or mode == 7 then
+                vai_radioanswer[mate]  = (r(1, 2) == 1) and 0 or 28
+                vai_radioanswert[mate] = r(50, 55) * c
+                c = c + 1
+                vai_mode[mate] = 0
+            end
+        end
+        return
+    end
+
+    --------------------------------------------------------------------------
+    -- RADIO 25: Report in → "reporting in!"
+    --------------------------------------------------------------------------
+    if radio == 25 then
+        mate = fai_randommate(source)
+        if mate ~= 0 then
+            vai_radioanswer[mate]  = 26
+            vai_radioanswert[mate] = r(35, 100)
+        end
+        return
+    end
 end
