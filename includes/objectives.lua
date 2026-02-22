@@ -1,4 +1,7 @@
+
 -- objectives.lua: bomb plant/defuse and hostage rescue
+-- (Logic unchanged from original; movement improvements in combat/movement handle
+--  the way bots navigate to objectives.)
 
 local abs    = math.abs
 local random = math.random
@@ -17,7 +20,7 @@ function fai_plantbomb(id)
     local ty = p(id, "tiley")
 
     -- inentityzone alone is sufficient; the old tile-entity check was
-    -- preventing planting in multi-tile bombzones
+    -- preventing planting in multi-tile bombzones.
     if inentityzone(tx, ty, ENT_BOMBSPOT) then
         if p(id, "weapontype") ~= WPN_BOMB then
             ai_selectweapon(id, WPN_BOMB)
@@ -31,7 +34,7 @@ function fai_plantbomb(id)
         return
     end
 
-    -- Still navigating to the bombspot
+    -- Still navigating to the bombspot.
     if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
         local x, y = randomentity(ENT_BOMBSPOT)
         if x ~= NO_ENTITY then
@@ -44,7 +47,7 @@ function fai_plantbomb(id)
 end
 
 -- Redirects all bots currently heading toward a sector that was just cleared,
--- so they fan out to remaining sites instead of stacking on a searched one
+-- so they fan out to remaining sites instead of stacking on a searched one.
 local function redirectBotsFrom(oldx, oldy)
     local bots = p(0, "bot")
     for i = 1, #bots do
@@ -67,7 +70,7 @@ function fai_defuse(id)
     local ty = p(id, "tiley")
 
     if vai_smode[id] == 0 then
-        -- Navigate to the current search sector
+        -- Navigate to the current search sector.
         if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
             local x, y = randomentity(ENT_BOMBSPOT, 0)
             if x ~= NO_ENTITY then
@@ -78,7 +81,7 @@ function fai_defuse(id)
             fai_walkaim(id)
         end
 
-        -- On arrival, scan for the planted bomb item
+        -- On arrival, scan for the planted bomb item.
         if abs(tx - vai_destx[id]) < BOMB_SECTOR_RADIUS
         and abs(ty - vai_desty[id]) < BOMB_SECTOR_RADIUS then
             local items = item(0, "table")
@@ -97,7 +100,7 @@ function fai_defuse(id)
                 end
             end
 
-            -- Sector clear: mark it and send other bots elsewhere
+            -- Sector clear: mark it and send other bots elsewhere.
             setentityaistate(vai_destx[id], vai_desty[id], 1)
             ai_radio(id, RADIO_AREA_CLEAR)
             redirectBotsFrom(vai_destx[id], vai_desty[id])
@@ -111,7 +114,7 @@ function fai_defuse(id)
     else
         local result = ai_goto(id, vai_destx[id], vai_desty[id])
         if result == 1 then
-            -- Adjacent to bomb: hold USE to defuse
+            -- Adjacent to bomb: hold USE to defuse.
             if vai_timer[id] == 0 then
                 ai_radio(id, RADIO_COVER_ME)
                 vai_timer[id] = 1
@@ -135,7 +138,7 @@ function fai_rescuehostages(id)
         end
         fai_walkaim(id)
 
-        -- Use any free hostage within reach
+        -- Use any free hostage within reach.
         local bx = p(id, "x")
         local by = p(id, "y")
         local list = hst(0, "table")
@@ -153,7 +156,7 @@ function fai_rescuehostages(id)
             end
         end
 
-        -- Validate before writing to avoid a one-tick NO_ENTITY destination
+        -- Validate before writing to avoid a one-tick NO_ENTITY destination.
         local dx, dy = closehostage(id)
         if dx == NO_ENTITY then
             vai_smode[id] = 1
@@ -169,10 +172,10 @@ function fai_rescuehostages(id)
     else
         local result = ai_goto(id, vai_destx[id], vai_desty[id])
         if result == 1 then
-            -- Reached rescue zone: roam briefly before next decision
+            -- Reached rescue zone: roam briefly before next decision.
             vai_mode[id]  = 3
-            vai_timer[id] = random(150, 300)
-            vai_smode[id] = random(0, 360)
+            vai_timer[id] = math.random(150, 300)
+            vai_smode[id] = math.random(0, 360)
         elseif result == 0 then
             vai_mode[id] = 0
         else

@@ -86,3 +86,78 @@ BOMB_SEARCH_RADIUS = 10   -- tile radius: scan for the planted bomb item
 
 -- Returned by randomentity / closehostage when no matching entity exists on the map
 NO_ENTITY = -100
+
+-- ============================================================
+-- HUMAN-LIKE BEHAVIOR CONSTANTS
+-- ============================================================
+
+-- Personality archetypes (assigned randomly per-bot on spawn)
+-- 1 = aggressive, 2 = cautious, 3 = support, 4 = balanced
+PERSONALITY_AGGRESSIVE = 1
+PERSONALITY_CAUTIOUS   = 2
+PERSONALITY_SUPPORT    = 3
+PERSONALITY_BALANCED   = 4
+
+-- Reaction time ranges by skill level (in ticks, ~50 ticks/sec)
+-- Bots delay this many ticks before locking onto a new target
+REACT_TICKS_FAST = 3   -- very fast reaction (~60ms)
+REACT_TICKS_MED  = 8   -- medium reaction (~160ms)
+REACT_TICKS_SLOW = 18  -- slow reaction (~360ms)
+
+-- Aim smoothing: how many degrees to rotate per tick toward the target
+-- Lower = smoother/slower aim, more human-like
+AIM_SMOOTH_FAST = 35   -- aggressive/high-skill bots
+AIM_SMOOTH_MED  = 22   -- average bots
+AIM_SMOOTH_SLOW = 14   -- cautious/low-skill bots
+
+-- Spray / recoil simulation
+-- After this many continuous shots, aim starts drifting
+SPRAY_START_SHOT  = 3    -- recoil drift kicks in after 3rd bullet
+SPRAY_MAX_DRIFT   = 18   -- max accumulated degrees of drift
+SPRAY_DRIFT_RATE  = 2.5  -- degrees of drift added per shot
+SPRAY_RECOVER_RATE= 4    -- degrees recovered per tick when not firing
+
+-- Burst fire: bots pause between bursts to simulate controlled shooting
+BURST_SIZE_MIN = 2   -- minimum shots per burst
+BURST_SIZE_MAX = 5   -- maximum shots per burst
+BURST_PAUSE_MIN = 4  -- minimum ticks between bursts
+BURST_PAUSE_MAX = 14 -- maximum ticks between bursts
+
+-- Distance-based accuracy penalty (pixels)
+-- Beyond this range, bots get an extra angle-miss penalty
+ACC_FULL_RANGE  = 180  -- full accuracy within this pixel distance
+ACC_FAR_PENALTY = 8    -- extra degrees of miss added at max range
+
+-- Movement accuracy penalty: extra miss angle when bot is moving
+ACC_MOVE_PENALTY = 6
+
+-- Peek-and-retreat: bots duck behind cover briefly, then peek again
+PEEK_EXPOSE_MIN  = 20  -- ticks exposed while peeking
+PEEK_EXPOSE_MAX  = 60
+PEEK_RETREAT_MIN = 15  -- ticks hiding between peeks
+PEEK_RETREAT_MAX = 45
+
+-- Last-known-position memory: how long (ticks) bots remember where they last saw an enemy
+LKP_MEMORY_TICKS = 120
+
+-- Footstep awareness: probability that a bot "hears" nearby movement and turns (per tick)
+FOOTSTEP_CHANCE   = 0.07  -- 7% per tick when an enemy is within footstep range
+FOOTSTEP_RANGE_SQ = 200 * 200  -- squared pixel radius for hearing footsteps
+
+-- Crouch behavior: probability per shot (while stationary) that bot crouches
+CROUCH_CHANCE    = 0.08   -- 8% chance to crouch each second-ish
+CROUCH_TICKS_MIN = 25
+CROUCH_TICKS_MAX = 90
+
+-- Grenade throw distance threshold (pixels): only throw if enemy is at least this far
+NADE_MIN_DIST = 150
+-- Probability per decide() call that a bot uses its grenade (if it has one)
+NADE_USE_CHANCE = 0.20
+
+-- Hesitation: bots occasionally pause before rounding corners
+HESITATE_CHANCE   = 0.12  -- 12% chance to hesitate at a waypoint arrival
+HESITATE_TICKS_MIN = 8
+HESITATE_TICKS_MAX = 35
+
+-- Low-HP panic: below this HP the bot retreats to find health or cover
+PANIC_HP_THRESHOLD = 25

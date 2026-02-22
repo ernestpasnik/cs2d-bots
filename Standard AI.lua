@@ -10,6 +10,7 @@ local function newtable(default)
     return t
 end
 
+-- Core state
 vai_mode         = newtable(-1)
 vai_smode        = newtable(0)
 vai_timer        = newtable(0)
@@ -28,6 +29,23 @@ vai_radioanswer  = newtable(0)
 vai_radioanswert = newtable(0)
 vai_followangle  = newtable(0)
 
+-- Human-like behaviour state (initialised by fai_init_humanstate in core.lua)
+vai_personality  = newtable(PERSONALITY_BALANCED)
+vai_react_delay  = newtable(REACT_TICKS_MED)
+vai_aim_smooth   = newtable(AIM_SMOOTH_MED)
+vai_burst_size   = newtable(BURST_SIZE_MAX)
+vai_burst_pause  = newtable(0)
+vai_spray_drift  = newtable(0)
+vai_shot_count   = newtable(0)
+vai_is_moving    = newtable(0)
+vai_lkp_x        = newtable(0)
+vai_lkp_y        = newtable(0)
+vai_lkp_timer    = newtable(0)
+vai_peek_state   = newtable(0)
+vai_peek_timer   = newtable(0)
+vai_crouch_timer = newtable(0)
+vai_react_timer  = newtable(0)
+
 fai_update_settings()
 
 local MODE = {}
@@ -43,43 +61,43 @@ end
 MODE[1] = function(id) fai_wait(id, 0) end
 
 MODE[2] = function(id)
-    if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
+    local result = ai_goto(id, vai_destx[id], vai_desty[id])
+    if result ~= 2 then
+        -- Arrived (or blocked); optional hesitation before re-deciding
+        if result == 1 and fai_maybehesitate(id) then
+            return  -- wait mode set inside fai_maybehesitate
+        end
         vai_mode[id] = 0
     else
         fai_walkaim(id)
+        vai_is_moving[id] = 1
     end
 end
 
 MODE[3] = function(id)
     if ai_move(id, vai_smode[id]) == 0 then
-        -- Blocked: alternate nudge direction per bot ID so they don't all turn the same way
+        -- Blocked: alternate nudge direction per bot ID
         vai_smode[id] = vai_smode[id] + ((id % 2 == 0) and 45 or -45)
         vai_timer[id] = math.random(150, 250)
     end
+    vai_is_moving[id] = 1
     fai_walkaim(id)
     fai_wait(id, 0)
 end
 
 MODE[4] = function(id) fai_fight(id) end
 
-MODE[5] = function(id)
-    -- vai_smode holds the hunted player ID in this mode
-    local tid = vai_smode[id]
-    if player(tid, "exists") and player(tid, "health") > 0 then
-        if ai_goto(id, player(tid, "tilex"), player(tid, "tiley")) ~= 2 then
-            vai_mode[id] = 0
-        end
-    else
-        vai_mode[id] = 0
-    end
-end
+-- Mode 5 is now handled by fai_hunt() in combat.lua (supports both player ID and LKP)
+MODE[5] = function(id) fai_hunt(id) end
 
 MODE[6] = function(id)
-    if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
+    local result = ai_goto(id, vai_destx[id], vai_desty[id])
+    if result ~= 2 then
         vai_mode[id]     = 0
         vai_itemscan[id] = COLLECT_SCAN_PERIOD  -- brief cooldown before scanning again
     else
         fai_walkaim(id)
+        vai_is_moving[id] = 1
     end
 end
 
@@ -89,12 +107,17 @@ MODE[8] = function(id)
     if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
         fai_randomadjacent(id)
     end
+    vai_is_moving[id] = 1
     if player(id, "ai_flash") == 0 then vai_mode[id] = 0 end
 end
 
 MODE[50] = function(id) fai_rescuehostages(id) end
 MODE[51] = function(id) fai_plantbomb(id) end
 MODE[52] = function(id) fai_defuse(id) end
+
+-- ============================================================
+-- SPAWN
+-- ============================================================
 
 function ai_onspawn(id)
     fai_update_settings()
@@ -103,6 +126,7 @@ function ai_onspawn(id)
     local y   = player(id, "y")
     local rnd = math.random
 
+    -- Core state
     vai_mode[id]         = -1
     vai_smode[id]        = 0
     vai_timer[id]        = rnd(1, 10)
@@ -120,7 +144,14 @@ function ai_onspawn(id)
     vai_radioanswer[id]  = 0
     vai_radioanswert[id] = 0
     vai_followangle[id]  = 0
+
+    -- Initialise personality and all human-like behaviour state
+    fai_init_humanstate(id)
 end
+
+-- ============================================================
+-- MAIN UPDATE LOOP
+-- ============================================================
 
 function ai_update_living(id)
     fai_engage(id)
@@ -144,8 +175,9 @@ function ai_update_living(id)
     fai_collect(id)
 
     if vai_set_debug == 1 then
-        ai_debug(id, ("m:%d sm:%d ta:%d ti:%d"):format(
-            vai_mode[id], vai_smode[id], vai_target[id], vai_timer[id]))
+        ai_debug(id, ("m:%d sm:%d ta:%d ti:%d pers:%d drift:%.1f"):format(
+            vai_mode[id], vai_smode[id], vai_target[id], vai_timer[id],
+            vai_personality[id] or 0, vai_spray_drift[id] or 0))
     end
 
     local handler = MODE[vai_mode[id]]
