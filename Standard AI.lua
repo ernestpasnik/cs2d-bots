@@ -2,7 +2,7 @@ dofile("bots/includes/core.lua")
 dofile("bots/includes/combat.lua")
 dofile("bots/includes/objectives.lua")
 dofile("bots/includes/movement.lua")
-dofile("bots/includestactics.lua")
+dofile("bots/includes/tactics.lua")
 
 local function newtable(default)
     local t = {}
