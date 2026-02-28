@@ -46,6 +46,11 @@ vai_peek_timer   = newtable(0)
 vai_crouch_timer = newtable(0)
 vai_react_timer  = newtable(0)
 
+-- Post-plant state (T-side bomb guard / escape)
+vai_bomb_guardx  = newtable(0)  -- tile X of planted bomb (cached)
+vai_bomb_guardy  = newtable(0)  -- tile Y of planted bomb (cached)
+vai_bomb_rescan  = newtable(0)  -- countdown until next bomb item scan
+
 fai_update_settings()
 
 local MODE = {}
@@ -87,7 +92,7 @@ end
 
 MODE[4] = function(id) fai_fight(id) end
 
--- Mode 5 is now handled by fai_hunt() in combat.lua (supports both player ID and LKP)
+-- Mode 5: hunt – supports both live player ID and LKP fallback
 MODE[5] = function(id) fai_hunt(id) end
 
 MODE[6] = function(id)
@@ -114,6 +119,12 @@ end
 MODE[50] = function(id) fai_rescuehostages(id) end
 MODE[51] = function(id) fai_plantbomb(id) end
 MODE[52] = function(id) fai_defuse(id) end
+
+-- Mode 53: T-side post-plant guard – camp around the bomb, shoot defenders
+MODE[53] = function(id) fai_guardbomb(id) end
+
+-- Mode 54: T-side bomb escape – sprint away before detonation
+MODE[54] = function(id) fai_escapebomb(id) end
 
 -- ============================================================
 -- SPAWN
@@ -144,6 +155,11 @@ function ai_onspawn(id)
     vai_radioanswer[id]  = 0
     vai_radioanswert[id] = 0
     vai_followangle[id]  = 0
+
+    -- Post-plant state
+    vai_bomb_guardx[id]  = 0
+    vai_bomb_guardy[id]  = 0
+    vai_bomb_rescan[id]  = 0
 
     -- Initialise personality and all human-like behaviour state
     fai_init_humanstate(id)

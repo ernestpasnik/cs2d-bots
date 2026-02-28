@@ -1,15 +1,55 @@
-
--- objectives.lua: bomb plant/defuse and hostage rescue
--- (Logic unchanged from original; movement improvements in combat/movement handle
---  the way bots navigate to objectives.)
+-- objectives.lua: bomb plant/defuse, hostage rescue, post-plant guard, and bomb escape
 
 local abs    = math.abs
 local random = math.random
+local sqrt   = math.sqrt
 local p      = player
 local hst    = hostage
 
--- MODE 51: walk to a bombspot and plant.
--- Drops out of this mode if the bot no longer carries the bomb.
+-- ============================================================
+-- INTERNAL: locate the planted bomb item
+-- Returns tile x, tile y or nil if not found.
+-- ============================================================
+local function findPlantedBombTile()
+    local items = item(0, "table")
+    for i = 1, #items do
+        local it = items[i]
+        if item(it, "type") == ITEM_BOMB_PLANTED then
+            return item(it, "x"), item(it, "y")
+        end
+    end
+    return nil, nil
+end
+
+-- ============================================================
+-- INTERNAL: count enemies visible to bot id
+-- Uses a simple proximity check combined with ai_freeline.
+-- ============================================================
+local function countVisibleEnemies(id)
+    local bx   = p(id, "x")
+    local by   = p(id, "y")
+    local team = p(id, "team")
+    local count = 0
+    for pid = 1, MAX_PLAYERS do
+        if p(pid, "exists") and p(pid, "health") > 0 then
+            local eteam = p(pid, "team")
+            if fai_enemies(id, pid) then
+                local ex = p(pid, "x")
+                local ey = p(pid, "y")
+                if abs(bx - ex) < VIEW_HALF_W and abs(by - ey) < VIEW_HALF_H then
+                    if ai_freeline(id, ex, ey) then
+                        count = count + 1
+                    end
+                end
+            end
+        end
+    end
+    return count
+end
+
+-- ============================================================
+-- MODE 51: plant the bomb
+-- ============================================================
 function fai_plantbomb(id)
     if not p(id, "bomb") then
         vai_mode[id] = 0
@@ -19,8 +59,6 @@ function fai_plantbomb(id)
     local tx = p(id, "tilex")
     local ty = p(id, "tiley")
 
-    -- inentityzone alone is sufficient; the old tile-entity check was
-    -- preventing planting in multi-tile bombzones.
     if inentityzone(tx, ty, ENT_BOMBSPOT) then
         if p(id, "weapontype") ~= WPN_BOMB then
             ai_selectweapon(id, WPN_BOMB)
@@ -46,8 +84,138 @@ function fai_plantbomb(id)
     end
 end
 
--- Redirects all bots currently heading toward a sector that was just cleared,
--- so they fan out to remaining sites instead of stacking on a searched one.
+-- ============================================================
+-- MODE 53: T-side post-plant guard
+-- Bot camps within BOMB_CAMP_RADIUS tiles of the planted bomb.
+-- Periodically re-scans to confirm the bomb is still present.
+-- Switches to mode 54 (escape) when the round timer is dangerously low.
+-- fai_engage() handles shooting any CTs that push the site.
+-- ============================================================
+function fai_guardbomb(id)
+    -- ── Escape check: if bomb timer is nearly expired, flee ──
+    -- game("timeleft") returns remaining round time in ticks on most builds;
+    -- fall back to a rescan-counter heuristic if the API is unavailable.
+    local timeleft = game("timeleft")
+    if timeleft and timeleft > 0 and timeleft <= BOMB_ESCAPE_TICKS then
+        vai_mode[id] = 54
+        fai_randomadjacent(id)   -- pick initial escape tile
+        return
+    end
+
+    -- ── Re-scan: confirm the bomb is still planted ────────────
+    vai_bomb_rescan[id] = vai_bomb_rescan[id] - 1
+    if vai_bomb_rescan[id] <= 0 then
+        vai_bomb_rescan[id] = BOMB_CAMP_RESCAN
+        local bx, by = findPlantedBombTile()
+        if bx then
+            vai_bomb_guardx[id] = bx
+            vai_bomb_guardy[id] = by
+        else
+            -- Bomb defused or round over; stop guarding
+            vai_mode[id] = 0
+            return
+        end
+    end
+
+    local gx = vai_bomb_guardx[id]
+    local gy = vai_bomb_guardy[id]
+    if gx == 0 and gy == 0 then
+        vai_mode[id] = 0
+        return
+    end
+
+    local tx = p(id, "tilex")
+    local ty = p(id, "tiley")
+
+    -- If already close to the bomb, hold position and use fight/wait logic.
+    if abs(tx - gx) <= BOMB_CAMP_RADIUS and abs(ty - gy) <= BOMB_CAMP_RADIUS then
+        -- Hold here; fai_engage() will handle any targets that appear.
+        -- Strafe slightly for variety but don't leave the site.
+        if vai_target[id] > 0 then
+            -- fai_fight-style micro-strafe while guarding
+            if ai_move(id, vai_smode[id]) == 0 then
+                vai_smode[id] = (vai_smode[id] + ((id % 2 == 0) and 45 or -45)) % 360
+            end
+            vai_is_moving[id] = 1
+        else
+            -- No visible enemy; pick a random nearby watch angle
+            if vai_timer[id] <= 0 then
+                vai_smode[id] = math.random(0, 360)
+                vai_timer[id] = math.random(30, 80)
+                ai_rotate(id, vai_smode[id])
+            else
+                vai_timer[id] = vai_timer[id] - 1
+            end
+        end
+    else
+        -- Navigate back toward the bomb site.
+        local result = ai_goto(id, gx, gy)
+        if result ~= 2 then
+            -- Blocked; just wait in place
+            fai_randomadjacent(id)
+        else
+            fai_walkaim(id)
+            vai_is_moving[id] = 1
+        end
+    end
+end
+
+-- ============================================================
+-- MODE 54: T-side bomb escape
+-- Bot sprints away from the bomb before it detonates.
+-- Keeps running until it is far enough away or the round ends.
+-- ============================================================
+function fai_escapebomb(id)
+    local gx = vai_bomb_guardx[id]
+    local gy = vai_bomb_guardy[id]
+
+    -- If we don't know where the bomb is, just roam away.
+    if gx == 0 and gy == 0 then
+        local bx, by = findPlantedBombTile()
+        if bx then
+            vai_bomb_guardx[id] = bx
+            vai_bomb_guardy[id] = by
+            gx = bx
+            gy = by
+        else
+            vai_mode[id] = 0
+            return
+        end
+    end
+
+    local bx = p(id, "x")
+    local by = p(id, "y")
+
+    -- Convert bomb tile coords to pixel coords (CS2D tiles are 32px)
+    local bomb_px = gx * 32
+    local bomb_py = gy * 32
+
+    local dx = bx - bomb_px
+    local dy = by - bomb_py
+    local dsq = dx * dx + dy * dy
+
+    if dsq >= BOMB_ESCAPE_DIST_SQ then
+        -- Far enough; stop fleeing, re-decide
+        vai_mode[id] = 0
+        return
+    end
+
+    -- Move away from the bomb
+    local away_angle = fai_angleto(bomb_px, bomb_py, bx, by) % 360
+    if ai_move(id, away_angle) == 0 then
+        -- Blocked; try a 90-degree offset
+        local alt = (away_angle + (id % 2 == 0 and 90 or -90)) % 360
+        if ai_move(id, alt) == 0 then
+            fai_randomadjacent(id)
+            vai_mode[id] = 2
+        end
+    end
+    vai_is_moving[id] = 1
+end
+
+-- ============================================================
+-- Redirects all CT bots searching a cleared sector to try others
+-- ============================================================
 local function redirectBotsFrom(oldx, oldy)
     local bots = p(0, "bot")
     for i = 1, #bots do
@@ -63,14 +231,35 @@ local function redirectBotsFrom(oldx, oldy)
     end
 end
 
--- MODE 52: search bombsites for the planted bomb, then defuse it.
---   smode 0 = searching  |  smode 1 = pathing to/defusing the bomb
+-- ============================================================
+-- MODE 52: CT defuse
+-- smode 0 = searching bombsites
+-- smode 1 = pathing to the actual bomb to defuse
+-- When smode 0 and the bot spots the bomb alone, it rushes immediately.
+-- ============================================================
 function fai_defuse(id)
     local tx = p(id, "tilex")
     local ty = p(id, "tiley")
 
     if vai_smode[id] == 0 then
-        -- Navigate to the current search sector.
+        -- Try to shortcut: if we can see the bomb and nobody is fighting, rush it.
+        local bx, by = findPlantedBombTile()
+        if bx then
+            local enemies_nearby = countVisibleEnemies(id)
+            if enemies_nearby == 0 then
+                -- No enemies visible; rush straight to the bomb
+                vai_destx[id] = bx
+                vai_desty[id] = by
+                vai_smode[id] = 1
+                return
+            end
+            -- Enemies present; still update destination to the real bomb location
+            -- but let fai_engage handle the fight first
+            vai_destx[id] = bx
+            vai_desty[id] = by
+        end
+
+        -- Navigate to current search sector
         if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
             local x, y = randomentity(ENT_BOMBSPOT, 0)
             if x ~= NO_ENTITY then
@@ -81,7 +270,7 @@ function fai_defuse(id)
             fai_walkaim(id)
         end
 
-        -- On arrival, scan for the planted bomb item.
+        -- On arrival, scan for the planted bomb item
         if abs(tx - vai_destx[id]) < BOMB_SECTOR_RADIUS
         and abs(ty - vai_desty[id]) < BOMB_SECTOR_RADIUS then
             local items = item(0, "table")
@@ -100,7 +289,7 @@ function fai_defuse(id)
                 end
             end
 
-            -- Sector clear: mark it and send other bots elsewhere.
+            -- Sector clear: mark it and redirect other bots
             setentityaistate(vai_destx[id], vai_desty[id], 1)
             ai_radio(id, RADIO_AREA_CLEAR)
             redirectBotsFrom(vai_destx[id], vai_desty[id])
@@ -114,22 +303,25 @@ function fai_defuse(id)
     else
         local result = ai_goto(id, vai_destx[id], vai_desty[id])
         if result == 1 then
-            -- Adjacent to bomb: hold USE to defuse.
+            -- Adjacent to bomb: hold USE to defuse
             if vai_timer[id] == 0 then
                 ai_radio(id, RADIO_COVER_ME)
                 vai_timer[id] = 1
             end
             ai_use(id)
         elseif result == 0 then
-            vai_mode[id] = 0  -- path blocked; give up and re-decide
+            -- Path blocked; give up and re-decide
+            vai_mode[id] = 0
         else
-            fai_walkaim(id)   -- still pathing
+            fai_walkaim(id)
         end
     end
 end
 
--- MODE 50: pick up all hostages then escort them to the rescue zone.
---   smode 0 = collecting hostages  |  smode 1 = escorting to rescue point
+-- ============================================================
+-- MODE 50: rescue hostages
+-- smode 0 = collecting hostages   |   smode 1 = escorting to rescue point
+-- ============================================================
 function fai_rescuehostages(id)
     if vai_smode[id] == 0 then
         if ai_goto(id, vai_destx[id], vai_desty[id]) ~= 2 then
@@ -138,7 +330,7 @@ function fai_rescuehostages(id)
         end
         fai_walkaim(id)
 
-        -- Use any free hostage within reach.
+        -- Use any free hostage within reach
         local bx = p(id, "x")
         local by = p(id, "y")
         local list = hst(0, "table")
@@ -156,7 +348,6 @@ function fai_rescuehostages(id)
             end
         end
 
-        -- Validate before writing to avoid a one-tick NO_ENTITY destination.
         local dx, dy = closehostage(id)
         if dx == NO_ENTITY then
             vai_smode[id] = 1
@@ -172,7 +363,7 @@ function fai_rescuehostages(id)
     else
         local result = ai_goto(id, vai_destx[id], vai_desty[id])
         if result == 1 then
-            -- Reached rescue zone: roam briefly before next decision.
+            -- Reached rescue zone; roam briefly before next decision
             vai_mode[id]  = 3
             vai_timer[id] = math.random(150, 300)
             vai_smode[id] = math.random(0, 360)

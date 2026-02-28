@@ -88,6 +88,30 @@ BOMB_SEARCH_RADIUS = 10   -- tile radius: scan for the planted bomb item
 NO_ENTITY = -100
 
 -- ============================================================
+-- BOMB CAMPING (T-side post-plant)
+-- ============================================================
+
+-- Tile radius around the planted bomb within which Ts will guard/camp
+BOMB_CAMP_RADIUS    = 8
+-- How often (ticks) a camping T re-checks whether the bomb is still planted
+BOMB_CAMP_RESCAN    = 60
+-- When the round timer drops below this many ticks, Ts flee the blast radius
+-- CS2D round time is typically ~135 seconds = ~6750 ticks; bomb timer ~45s = ~2250 ticks.
+-- We use a conservative value so bots escape with a few seconds to spare.
+BOMB_ESCAPE_TICKS   = 180  -- ~3.6 seconds at 50 ticks/sec; tune per server tickrate
+-- Minimum pixel distance bots try to put between themselves and the bomb before detonation
+BOMB_ESCAPE_DIST_SQ = 300 * 300
+
+-- ============================================================
+-- CT BOMB RESPONSE
+-- ============================================================
+
+-- After bomb is planted, a CT who finds nobody defending the bomb
+-- will rush straight to defuse.  This is the tile radius within which
+-- a CT considers itself "alone" at the bombsite (no enemies visible).
+CT_RUSH_CHECK_RADIUS = 12
+
+-- ============================================================
 -- HUMAN-LIKE BEHAVIOR CONSTANTS
 -- ============================================================
 
@@ -99,7 +123,7 @@ PERSONALITY_SUPPORT    = 3
 PERSONALITY_BALANCED   = 4
 
 -- Reaction time ranges by skill level (in ticks, ~50 ticks/sec)
--- Bots delay this many ticks before locking onto a new target
+-- bot_skill valid range is 0-4; bots delay this many ticks before locking onto a new target
 REACT_TICKS_FAST = 3   -- very fast reaction (~60ms)
 REACT_TICKS_MED  = 8   -- medium reaction (~160ms)
 REACT_TICKS_SLOW = 18  -- slow reaction (~360ms)
